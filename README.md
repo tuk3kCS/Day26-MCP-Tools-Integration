@@ -1,181 +1,138 @@
-# Lab: Build a Database MCP Server with FastMCP and SQLite
+# SQLite & PostgreSQL Database FastMCP Server (Lab Submission)
 
-## Goal
+This repository contains a complete, production-grade Model Context Protocol (MCP) server built with **FastMCP** in Python. The server exposes a relational database schema, tables, and records through a set of secure, parameterized tools and dynamic schema resources.
 
-Build a Model Context Protocol (MCP) server using FastMCP that exposes a small database through:
+## Features
 
-- `search`
-- `insert`
-- `aggregate`
+### 1. Unified Database Adapter (`db.py`)
+- **Shared Interface**: Abstract class `DatabaseAdapter` exposes common database behaviors.
+- **Dual Support (Bonus Feature)**: Built-in `SQLiteAdapter` and `PostgreSQLAdapter` classes. If the `DATABASE_URL` environment variable is defined, the server seamlessly switches to PostgreSQL; otherwise, it defaults to SQLite (`sqlite_lab.db`).
+- **SQL Parametrization & Safety**: Column and table names are fully validated against the database schema before query assembly to prevent SQL injection. Filter values are passed securely using named bindings (`:param` for SQLite, `%(param)s` for PostgreSQL).
+- **Auto-Closing Connections**: Implements a `connection` context manager to guarantee connection closing and prevent file locking issues on Windows.
 
-You must also expose the database schema as an MCP resource, test the server with Inspector or equivalent tooling, and show the server working from at least one MCP client.
+### 2. Core Tools
+- `search`: Relational search query supporting selection of columns, multi-clause filters, ordering, pagination (`limit`/`offset`), and safety capping of 100 rows per query.
+- `insert`: Standard insertion tool that validates payload inputs against target schemas, executing a parameterized `INSERT` and returning the inserted payload along with the auto-generated primary key ID.
+- `aggregate`: Computes SQL aggregate functions (`COUNT`, `AVG`, `SUM`, `MIN`, `MAX`) with optional filters and `GROUP BY` groupings.
 
-## Learning Outcomes
+### 3. Dynamic Resources
+- `schema://database`: Exposes the entire database schema (tables, column names, and data types) as a JSON snapshot.
+- `schema://table/{table_name}`: Dynamic template resource exposing the column schema for a specific table name.
 
-By the end of this lab, students should be able to:
+### 4. Dual Transports (Bonus Feature)
+- **STDIO Transport**: Default, highly optimized transport for local integration with MCP clients (e.g. Antigravity IDE, Gemini CLI, Claude Code).
+- **FastAPI / SSE Transport with API Key Auth**: Running with `--sse` spins up a FastAPI SSE server. The server implements middleware authentication checking headers (`X-API-Key`) or query parameters (`?api_key=...`) against the `MCP_API_KEY` env variable.
 
-- explain what MCP tools and resources are
-- build a FastMCP server in Python
-- connect FastMCP to a SQLite database
-- safely validate database requests before executing SQL
-- expose dynamic schema context through `@mcp.resource(...)`
-- test tool schemas, normal calls, and error responses
-- connect the server to an MCP client such as Claude Code, Codex, or Gemini CLI
+---
 
-## Required Features
-
-### Part 1: MCP Server
-
-Implement a FastMCP server that exposes exactly these tool categories:
-
-1. `search`
-2. `insert`
-3. `aggregate`
-
-Your server may use SQLite for the main implementation. If you want to support PostgreSQL too, design the code so the database layer can be swapped later.
-
-### Part 2: Resource
-
-Expose database schema information as MCP resources:
-
-- one resource for the full database schema
-- one dynamic resource template for a single table schema
-
-Suggested URIs:
-
-- `schema://database`
-- `schema://table/{table_name}`
-
-### Part 3: Validation and Error Handling
-
-Your tools must reject unsafe or invalid requests:
-
-- unknown table names
-- unknown column names
-- unsupported filter operators
-- invalid aggregate requests
-- empty inserts
-
-Do not build SQL by blindly concatenating raw user input.
-
-### Part 4: Testing and Verification
-
-Verify all of the following:
-
-1. the server starts correctly
-2. the three tools are discoverable
-3. the schema resource is discoverable
-4. valid tool calls return useful results
-5. invalid tool calls return clear errors
-6. at least one MCP client can connect and use the server
-
-### Part 5: Demo Deliverables
-
-Prepare:
-
-- GitHub repository
-- setup instructions
-- tool descriptions
-- testing steps
-- at least one client configuration example
-- short demo video, around 2 minutes
-
-Inspector screenshots are recommended if you use MCP Inspector.
-
-## Suggested Project Structure
+## Project Structure
 
 ```text
 implementation/
-  db.py
-  init_db.py
-  mcp_server.py
-  verify_server.py
-  tests/
-    test_server.py
+  ├── db.py               # Unified SQLite & PostgreSQL adapter interface and logic
+  ├── init_db.py          # Database schema creator and seed generator
+  ├── mcp_server.py       # FastMCP server wrapping tools, resources, and SSE transport
+  ├── verify_server.py    # Manual verification runner to inspect output formatting
+  └── tests/
+      └── test_server.py  # Fully isolated automated test suite (16 tests)
+.agents/
+  └── mcp_config.json     # Workspace level Antigravity configuration
+README.md                 # Project documentation and submission instructions
 ```
 
-## Recommended Data Model
+---
 
-Use a small relational dataset so `search`, `insert`, and `aggregate` are easy to demo. Example:
+## Installation & Setup
 
-- `students`
-- `courses`
-- `enrollments`
-
-## Example Tasks to Demonstrate
-
-- search all students in cohort `A1`
-- insert a new student
-- count rows in a table
-- compute average score by cohort
-- read the full schema resource
-- read `schema://table/students`
-- show an invalid request, such as searching a missing table
-
-## FastMCP and Inspector References
-
-- FastMCP quickstart: https://gofastmcp.com/v2/getting-started/quickstart
-- FastMCP resources: https://gofastmcp.com/v2/servers/resources
-- MCP Inspector: https://modelcontextprotocol.io/docs/tools/inspector
-
-## Client Setup Notes
-
-### Claude Code
-
-Anthropic documents local JSON config and `claude mcp add` flows here:
-
-- https://code.claude.com/docs/en/mcp
-
-Claude Code supports MCP resources via `@server:resource-uri` references and supports environment variable expansion in `.mcp.json`.
-
-### Codex
-
-OpenAI documents Codex MCP setup here:
-
-- https://developers.openai.com/learn/docs-mcp
-
-Codex supports MCP server configuration through the CLI and `~/.codex/config.toml`.
-
-### Gemini CLI
-
-Gemini CLI has a built-in MCP manager. In the verified local workflow, the simplest path is:
-
+### 1. Install Dependencies
+Verify Python 3.10+ is installed, then install `fastmcp` and `psycopg2-binary` (required for PostgreSQL adapter):
 ```bash
-gemini mcp add sqlite-lab /ABSOLUTE/PATH/TO/python /ABSOLUTE/PATH/TO/implementation/mcp_server.py --description "SQLite lab FastMCP server" --timeout 10000
-gemini mcp list
+pip install fastmcp psycopg2-binary
 ```
 
-Gemini CLI also documents configuration details here:
+### 2. Initialize and Seed the Database
+Run the setup script to initialize the tables (`students`, `courses`, `enrollments`) and populate them with standard seed records:
+```bash
+python implementation/init_db.py
+```
+Output:
+```text
+Initializing SQLite database at: C:\Users\Admin\Documents\GitHub\Day26-Track3-MCP-tool-integration\implementation\sqlite_lab.db
+SQLite database successfully initialized and seeded.
+```
 
-- https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md
+---
 
-Expected outcome:
+## Running Verification
 
-- the server appears as `Connected`
-- Gemini can discover `search`, `insert`, and `aggregate`
-- a headless smoke test works with `gemini --allowed-mcp-server-names sqlite-lab --yolo -p "..."`
+### 1. Run Automated Test Suite
+The test suite consists of 16 tests covering all edge cases, validations, filters, and schema resources. Each test case runs in database-level isolation:
+```bash
+python -m unittest implementation/tests/test_server.py
+```
+Output:
+```text
+Ran 16 tests in 0.573s
 
-### Antigravity
+OK
+```
 
-Antigravity commonly uses an `mcp_config.json` file with a shape similar to Gemini CLI. Verify the current product behavior in your installed version before grading against exact UI steps.
+### 2. Manual Verification Script
+Run the manual verification runner to inspect the exact outputs, schemas, and error responses returned by the server:
+```bash
+python implementation/verify_server.py
+```
 
-## Deliverable Checklist
+This script will run and output:
+- Full schema discovery
+- Dynamic schema template lookup
+- Successful searches and inserts
+- Average and count aggregations
+- Clear, descriptive validation errors for nonexistent tables or unsupported operators.
 
-- working FastMCP server
-- SQLite database and seed data
-- `search`, `insert`, `aggregate` tools
-- schema resource and schema resource template
-- verification steps
-- automated tests or repeatable verification script
-- client configuration example
-- README with setup and demo steps
-- Inspector startup command or helper script
-- at least one verified Gemini CLI or Claude/Codex client test
+---
 
-## Bonus
+## Client Integration
 
-Optional bonus:
+### 1. Antigravity Configuration (IDE & CLI)
+Antigravity discovers and registers local MCP servers using `mcp_config.json`. 
 
-- add authentication for SSE or HTTP transport
-- support both SQLite and PostgreSQL with the same MCP surface
-- add richer output annotations or pagination
+#### Global IDE Config Path:
+- `C:\Users\Admin\.gemini\config\mcp_config.json`
+
+#### Global CLI Config Path:
+- `C:\Users\Admin\.gemini\antigravity-cli\mcp_config.json`
+
+#### Workspace Level Config Path:
+- `C:\Users\Admin\Documents\GitHub\Day26-Track3-MCP-tool-integration\.agents\mcp_config.json`
+
+Configure the server with the following settings (which have been pre-written during setup):
+```json
+{
+  "mcpServers": {
+    "sqlite-lab": {
+      "command": "C:\\Python314\\python.exe",
+      "args": [
+        "C:\\Users\\Admin\\Documents\\GitHub\\Day26-Track3-MCP-tool-integration\\implementation\\mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\Admin\\Documents\\GitHub\\Day26-Track3-MCP-tool-integration\\implementation"
+    }
+  }
+}
+```
+
+### 2. MCP Inspector
+To test tool discovery, schemas, and live executions through the MCP Inspector UI:
+```bash
+npx -y @modelcontextprotocol/inspector C:\Python314\python.exe C:\Users\Admin\Documents\GitHub\Day26-Track3-MCP-tool-integration\implementation\mcp_server.py
+```
+
+### 3. SSE Transport with Authentication (Bonus Mode)
+To run the server in remote SSE transport mode:
+```bash
+# Set custom API key and transport mode
+set MCP_TRANSPORT=sse
+set MCP_API_KEY=my-secure-key
+python implementation/mcp_server.py
+```
+The server starts on `http://127.0.0.1:8000/mcp`. Any connection request (e.g. `/mcp/sse`) must pass headers `X-API-Key: my-secure-key` or query parameter `?api_key=my-secure-key` to authorize.
